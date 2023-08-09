@@ -1,0 +1,88 @@
+---
+title: "PostFireSuccession"
+author: "Jeff Grayum"
+date: "2023-08-09"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Loading libraries
+```{r}
+#### Libraries ###
+library(readxl)
+library(lubridate)
+library(sf)
+```
+
+Importing and cleaning data
+```{r}
+#### Importing and cleaning data ####
+
+summer_2022_locs_burn <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Sum2022BurnedDist.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  mutate(date = as.Date(date)) %>%
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_creat)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5)) %>%
+  mutate(burndate = as.Date(burndate))
+
+summer_2022_locs_burn %>%
+  str()
+
+
+
+#Should work on Windows
+#summer_2022_locs_burn <- rio::import("F:BOBWHITE_DATA/Clean/Sum2022BurnedDist.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  mutate(date = as.Date(date)) %>%
+  mutate(DT.chr = gsub("-05:00","",gsub("T"," ",date_creat)),
+         DT.GMT = as.POSIXct(DT.chr, format = "%Y-%m-%d %H:%M:%S", tz = "GMT"),
+         DT = DT.GMT-lubridate::hours(5))
+
+burn_units_2022 <- raster::shapefile("/Volumes/Samsung_T5/BOBWHITE_DATA/BobwhiteData/2022_BurnUnits.shp/2022_BurnUnits.shp")
+
+#Below, we look at dataframe. This will not work after converting to "sf"
+burn_units_2022@data
+
+#Below is Daniel Crawford's code for importing on his setup
+ #habitat <- raster::shapefile("F:/BOBWHITE_DATA/BobwhiteData/2022_BurnUnits.shp/2022_BurnUnits.shp")
+
+
+#Importing 2022 veg data 
+veg_data_2022 <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/VegSurveys2022.xlsx", setclass = "tibble")
+
+burn_units_2022 <- burn_units_2022 %>%
+  as(., "sf")
+
+burn_units_2022 %>%
+  ggplot(aes(fill = BURNDATE)) +
+  geom_sf() +
+  theme(legend.position = "none")
+
+#Creating TSF column, subtracting date of observation from burn date.
+summer_2022_locs_burn$TSF <- as.numeric(summer_2022_locs_burn$date - summer_2022_locs_burn$burndate)
+
+#Filtering for locations recorded after fire.
+summer_2022_locs_burn <- summer_2022_locs_burn %>%
+  filter(date > "2022-4-11") 
+
+# Identify the rows with NA in the TSF column (points not in units burned that year). We need to populated these with values that are 365 days greater than points taken on same day in burned units.
+na_indices <- is.na(summer_2022_locs_burn$TSF)
+
+# Replace NA values TSF (assuming last year's burn date was similar).
+summer_2022_locs_burn$TSF[na_indices] <- as.numeric(summer_2022_locs_burn$date[na_indices] - as.Date("2022-04-11")) + 365
+
+summer_2022_locs_burn %>%
+  arrange(date) %>%
+  view()
+
+badbad_model <- lmer(burned ~ TSF + (1|band_numb), data = summer_2022_locs_burn)
+summary(badbad_model)
+
+```
+
